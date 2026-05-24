@@ -1,0 +1,56 @@
+name: roadsos
+description: RoadSoS - Smart Road Accident Emergency Response App for India
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # State Management
+  flutter_riverpod: ^2.5.1
+  riverpod_annotation: ^2.3.5
+
+
+  # Firebase
+  firebase_core: ^3.1.0
+  firebase_auth: ^5.1.0
+  cloud_firestore: ^5.1.0
+
+  # Location & Maps
+  geolocator: ^12.0.0
+  geocoding: ^3.0.0
+  google_maps_flutter: ^2.7.0
+
+  # Sensors (Crash Detection)
+  sensors_plus: ^5.0.1
+
+  # Background Service
+  flutter_foreground_task: ^8.0.2
+
+  # Communication
+  url_launcher: ^6.3.0
+  permission_handler: ^11.3.1
+
+  # UI
+  flutter_local_notifications: ^17.2.1
+  lottie: ^3.1.2
+  google_fonts: ^6.2.1
+  gap: ^3.0.1
+  shared_preferences: ^2.2.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.11
+  riverpod_generator: ^2.4.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/
