@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+ 
   
   # State Management
   flutter_riverpod: ^2.5.1
@@ -33,6 +34,8 @@ dependencies:
 
   # Communication
   url_launcher: ^6.3.0
+  # flutter_sms:  ^2.3.3
+  # send_sms: ^1.0.0
   permission_handler: ^11.3.1
 
   # UI

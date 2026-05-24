@@ -38,6 +38,12 @@ Future<void> _saveUser() async {
     await prefs.setString('userPhone', _phoneController.text.trim());
     await prefs.setString('bloodGroup', _bloodGroup);
     await prefs.setBool('isOnboarded', true);
+    
+    // Save contacts as JSON string
+    final contactsJson = _contacts.map((c) => 
+      '${c['name']}|${c['phone']}|${c['relation']}'
+    ).toList();
+    await prefs.setStringList('emergencyContacts', contactsJson);
 
     if (mounted) {
       setState(() => _isLoading = false);

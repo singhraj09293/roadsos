@@ -1,8 +1,11 @@
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../models/user_model.dart';
 
 class SmsService {
+  static const _channel = MethodChannel('com.roadsos/sms');
+
   Future<void> sendSosToAll({
     required UserModel user,
     required Position position,
@@ -10,6 +13,13 @@ class SmsService {
     required String state,
     String nearestHospital = '',
   }) async {
+    // Request SMS permission
+    final status = await Permission.sms.request();
+    if (!status.isGranted) {
+      print('❌ SMS permission denied');
+      return;
+    }
+
     final message = _buildSosMessage(
       userName: user.name,
       position: position,
@@ -19,10 +29,28 @@ class SmsService {
       nearestHospital: nearestHospital,
     );
 
+    print('📲 Sending to ${user.emergencyContacts.length} contacts');
+    print('📝 Message: $message');
+
     for (final contact in user.emergencyContacts) {
-      await _sendSms(contact.phone, message);
-      // Small delay between messages
-      await Future.delayed(const Duration(milliseconds: 500));
+      String phone = contact.phone.replaceAll(RegExp(r'[^\d]'), '');
+      if (!phone.startsWith('91')) {
+        phone = '91$phone';
+      }
+      print('📞 Sending to: $phone');
+      await _sendSms(phone, message);
+    }
+  }
+
+  Future<void> _sendSms(String phone, String message) async {
+    try {
+      await _channel.invokeMethod('sendSMS', {
+        'phone': phone,
+        'message': message,
+      });
+      print('✅ SMS sent to $phone');
+    } on PlatformException catch (e) {
+      print('❌ Failed to send SMS to $phone: ${e.message}');
     }
   }
 
@@ -37,47 +65,14 @@ class SmsService {
     final mapsLink =
         'https://maps.google.com/?q=${position.latitude},${position.longitude}';
     final time = DateTime.now();
-    final timeStr =
-        '${time.hour}:${time.minute.toString().padLeft(2, '0')} ${time.hour >= 12 ? 'PM' : 'AM'}';
+    final timeStr = '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
 
-    return '''🚨 EMERGENCY ALERT - RoadSoS
-        
-$userName may have been in an accident!
-
-📍 Location: $mapsLink
-🏙️ Area: $city, $state
-⏰ Time: $timeStr
-🩸 Blood Group: $bloodGroup
-${nearestHospital.isNotEmpty ? '🏥 Nearest Hospital: $nearestHospital' : ''}
-
-Please call 108 (Ambulance) immediately
-or rush to the location.
-
-Sent automatically by RoadSoS app''';
-  }
-
-  Future<void> _sendSms(String phone, String message) async {
-    // Clean phone number
-    String cleanPhone = phone.replaceAll(RegExp(r'[^\d+]'), '');
-    if (!cleanPhone.startsWith('+')) {
-      cleanPhone = '+91$cleanPhone'; // Default India code
-    }
-
-    final uri = Uri(
-      scheme: 'sms',
-      path: cleanPhone,
-      queryParameters: {'body': message},
-    );
-
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
-  }
-
-  Future<void> callNumber(String number) async {
-    final uri = Uri(scheme: 'tel', path: number);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
+    return '''🚨 EMERGENCY - RoadSoS
+$userName may be in an accident!
+📍 $mapsLink
+🏙️ $city, $state
+⏰ $timeStr
+🩸 Blood: $bloodGroup
+${nearestHospital.isNotEmpty ? '🏥 Nearest Hospital: $nearestHospital\n' : ''}Call 108 immediately!''';
   }
 }

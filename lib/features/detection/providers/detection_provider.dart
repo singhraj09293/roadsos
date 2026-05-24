@@ -1,4 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:roadsos/models/user_model.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/services/accelerometer_service.dart';
 import '../../../core/services/location_service.dart';
 import '../../../core/services/sms_service.dart';
@@ -48,17 +50,43 @@ class DetectionNotifier extends StateNotifier<DetectionState> {
     // Start listening
     _accelerometerService.startListening();
   }
+Future<void> _fireSos() async {
+  state = DetectionState.sosActive;
 
-  Future<void> _fireSos() async {
-    state = DetectionState.sosActive;
+  final position = await _locationService.getCurrentPosition();
+  if (position == null) return;
 
-    // Get location
-    final position = await _locationService.getCurrentPosition();
-    if (position == null) return;
+  final prefs = await SharedPreferences.getInstance();
+  final name = prefs.getString('userName') ?? 'Someone';
+  final phone = prefs.getString('userPhone') ?? '';
+  final bloodGroup = prefs.getString('bloodGroup') ?? 'Unknown';
+  
+  // Read real emergency contacts
+  final contactsRaw = prefs.getStringList('emergencyContacts') ?? [];
+  final contacts = contactsRaw.map((c) {
+    final parts = c.split('|');
+    return EmergencyContact(
+      name: parts[0],
+      phone: parts[1],
+      relation: parts[2],
+    );
+  }).toList();
 
-    // TODO: Get user from Firestore and send SMS
-    // This will be wired up with the user provider
-  }
+  final user = UserModel(
+    id: '1',
+    name: name,
+    phone: phone,
+    bloodGroup: bloodGroup,
+    emergencyContacts: contacts,
+  );
+
+  await _smsService.sendSosToAll(
+    user: user,
+    position: position,
+    city: _locationService.lastKnownCity,
+    state: _locationService.lastKnownState,
+  );
+}
 
   void userIsSafe() {
     _accelerometerService.cancelAlert();

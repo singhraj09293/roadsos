@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../detection/providers/detection_provider.dart';
 import '../../detection/screens/are_you_safe_dialog.dart';
 import '../../../core/theme/app_theme.dart';
@@ -21,6 +22,10 @@ class HomeScreen extends ConsumerWidget {
       builder: (_) => const AreYouSafeDialog(),
     );
   }
+});
+WidgetsBinding.instance.addPostFrameCallback((_) async {
+  await Permission.location.request();
+  await Permission.sms.request();
 });
     return Scaffold(
       appBar: AppBar(

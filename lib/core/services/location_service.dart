@@ -1,46 +1,5 @@
+import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
-// The geolocator package may not be available in some build environments.
-// Provide lightweight stubs for the small subset of APIs used here so the
-// file can be analyzed/compiled without the package. In a real app, keep the
-// dependency and remove these stubs.
-
-// Stub: Position
-class Position {
-  final double latitude;
-  final double longitude;
-  final double speed; // m/s
-  Position({required this.latitude, required this.longitude, this.speed = 0});
-}
-
-// Stub: LocationPermission
-enum LocationPermission { denied, whileInUse, always }
-
-// Stub: LocationAccuracy
-enum LocationAccuracy { high }
-
-// Stub: LocationSettings
-class LocationSettings {
-  final LocationAccuracy accuracy;
-  final int distanceFilter;
-  const LocationSettings({required this.accuracy, required this.distanceFilter});
-}
-
-// Stub: Geolocator minimal API surface used in this file.
-class Geolocator {
-  static Future<bool> isLocationServiceEnabled() async => false;
-
-  static Future<LocationPermission> checkPermission() async => LocationPermission.denied;
-
-  static Future<LocationPermission> requestPermission() async => LocationPermission.denied;
-
-  static Future<Position> getCurrentPosition({LocationAccuracy? desiredAccuracy, Duration? timeLimit}) async {
-    throw UnimplementedError('geolocator.getCurrentPosition is not available in this environment');
-  }
-
-  static Stream<Position> getPositionStream({required LocationSettings locationSettings}) {
-    return const Stream<Position>.empty();
-  }
-}
 
 class LocationService {
   Position? _lastKnownPosition;
@@ -67,14 +26,12 @@ class LocationService {
   Future<Position?> getCurrentPosition() async {
     try {
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
-      );
+    desiredAccuracy: LocationAccuracy.high,
+  );
       _lastKnownPosition = position;
       await _reverseGeocode(position);
       return position;
     } catch (e) {
-      // Return last known if fresh fetch fails
       return _lastKnownPosition;
     }
   }
@@ -92,7 +49,6 @@ class LocationService {
     } catch (_) {}
   }
 
-  // Track speed for crash detection priority
   Stream<double> get speedStream {
     return Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
@@ -101,7 +57,6 @@ class LocationService {
       ),
     ).map((pos) {
       _lastKnownPosition = pos;
-      // speed is in m/s, convert to km/h
       return (pos.speed * 3.6).clamp(0, double.infinity);
     });
   }
