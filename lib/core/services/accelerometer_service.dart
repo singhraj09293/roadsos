@@ -27,6 +27,8 @@ class AccelerometerService {
 
   double _lastSpeed = 0.0;
   double _currentMagnitude = 0.0;
+  bool _inFreefall = false;
+  DateTime? _freefallTime;
 
   void setSpeed(double speedKmh) {
     _lastSpeed = speedKmh;
@@ -52,16 +54,36 @@ class AccelerometerService {
     // Subtract gravity (9.8) to get only impact force
     return (raw - 9.8).abs();
   }
+void _processReading(double magnitude) {
+  if (_state != DetectionState.idle) return;
 
-  void _processReading(double magnitude) {
-    if (_state != DetectionState.idle) return;
-
-    if (magnitude > DetectionThresholds.impactThreshold) {
-      _state = DetectionState.alerting;
-      onImpactConfirmed?.call();
-      _startCountdown();
-    }
+  // Detect freefall (near zero net force)
+  if (magnitude < 2.0) {
+    _inFreefall = true;
+    _freefallTime = DateTime.now();
+    return;
   }
+
+  // Detect impact after freefall within 2 seconds
+  final isRecentFreefall = _freefallTime != null &&
+      DateTime.now().difference(_freefallTime!).inMilliseconds < 2000;
+
+  if (_inFreefall && isRecentFreefall && magnitude > DetectionThresholds.impactThreshold) {
+    _inFreefall = false;
+    _freefallTime = null;
+    _state = DetectionState.alerting;
+    onImpactConfirmed?.call();
+    _startCountdown();
+    return;
+  }
+
+  // Reset freefall if too much time passed
+  if (_freefallTime != null &&
+      DateTime.now().difference(_freefallTime!).inMilliseconds > 2000) {
+    _inFreefall = false;
+    _freefallTime = null;
+  }
+}
 
   void _startStillnessCheck() {
     // STEP 2: Check stillness for 3 seconds

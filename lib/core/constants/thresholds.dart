@@ -1,7 +1,7 @@
 class DetectionThresholds {
   // Accelerometer impact threshold (m/s²)
   // Normal gravity = 9.8, impact > 25 is significant
-  static const double impactThreshold = 20.0;
+  static const double impactThreshold = 8.0;
 
   // Stillness check duration (seconds)
   // After impact, how long to wait to confirm no movement

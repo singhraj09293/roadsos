@@ -14,15 +14,12 @@ class UserSetupScreen extends ConsumerStatefulWidget {
 class _UserSetupScreenState extends ConsumerState<UserSetupScreen> {
   final _nameController = TextEditingController();
   final _phoneController = TextEditingController();
-  final String _selectedBloodGroup = 'O+';
   final List<Map<String, String>> _contacts = [];
-  bool _isLoading = false;
-  int _currentStep = 0;
-
-  final List<String> _bloodGroups = [
-    'A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'
-  ];
   String _bloodGroup = 'O+';
+  bool _isLoading = false;
+  int _page = 0;
+
+  final _bloodGroups = ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'];
 
   @override
   void dispose() {
@@ -30,180 +27,439 @@ class _UserSetupScreenState extends ConsumerState<UserSetupScreen> {
     _phoneController.dispose();
     super.dispose();
   }
-Future<void> _saveUser() async {
-  setState(() => _isLoading = true);
-  try {
+
+  Future<void> _saveUser() async {
+    setState(() => _isLoading = true);
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('userName', _nameController.text.trim());
     await prefs.setString('userPhone', _phoneController.text.trim());
     await prefs.setString('bloodGroup', _bloodGroup);
     await prefs.setBool('isOnboarded', true);
-    
-    // Save contacts as JSON string
-    final contactsJson = _contacts.map((c) => 
-      '${c['name']}|${c['phone']}|${c['relation']}'
-    ).toList();
-    await prefs.setStringList('emergencyContacts', contactsJson);
-
+    await prefs.setStringList(
+      'emergencyContacts',
+      _contacts
+          .map((c) => '${c['name']}|${c['phone']}|${c['relation']}')
+          .toList(),
+    );
     if (mounted) {
-      setState(() => _isLoading = false);
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(builder: (_) => const HomeScreen()),
       );
     }
-  } catch (e) {
-    setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-    );
   }
-}
+
+  void _next() {
+    if (_page == 0 && _nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter your name')),
+      );
+      return;
+    }
+    if (_page < 2)
+      setState(() => _page++);
+    else
+      _saveUser();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundDark,
-      appBar: AppBar(
-        backgroundColor: AppTheme.backgroundDark,
-        title: const Text(
-          'Setup Your Profile',
-          style: TextStyle(color: Colors.white),
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _TopBar(page: _page),
+            Expanded(
+              child: SingleChildScrollView(
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 300),
+                  child: [
+                    _Page1(nameC: _nameController, phoneC: _phoneController),
+                    _Page2(
+                      bloodGroup: _bloodGroup,
+                      bloodGroups: _bloodGroups,
+                      onSelect: (bg) => setState(() => _bloodGroup = bg),
+                    ),
+                    _Page3(
+                      contacts: _contacts,
+                      onAdd: (c) => setState(() => _contacts.add(c)),
+                      onRemove: (c) => setState(() => _contacts.remove(c)),
+                      inputDecoration: _inputDec,
+                    ),
+                  ][_page],
+                ),
+              ),
+            ),
+            _BottomBar(
+              page: _page,
+              isLoading: _isLoading,
+              onBack: _page > 0 ? () => setState(() => _page--) : null,
+              onNext: _next,
+            ),
+          ],
         ),
       ),
-      body: Stepper(
-        currentStep: _currentStep,
-        onStepContinue: () {
-          if (_currentStep < 2) {
-            setState(() => _currentStep++);
-          } else {
-            _saveUser();
-          }
-        },
-        onStepCancel: () {
-          if (_currentStep > 0) {
-            setState(() => _currentStep--);
-          }
-        },
-        steps: [
-          // Step 1 - Personal Info
-          Step(
-            title: const Text(
-              'Personal Info',
-              style: TextStyle(color: Colors.white),
-            ),
-            isActive: _currentStep >= 0,
-            content: Column(
-              children: [
-                TextField(
-                  controller: _nameController,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: _inputDecoration('Full Name', Icons.person),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _phoneController,
-                  style: const TextStyle(color: Colors.white),
-                  keyboardType: TextInputType.phone,
-                  decoration: _inputDecoration('Phone Number', Icons.phone),
-                ),
-              ],
-            ),
-          ),
+    );
+  }
 
-          // Step 2 - Medical Info
-          Step(
-            title: const Text(
-              'Medical Info',
-              style: TextStyle(color: Colors.white),
-            ),
-            isActive: _currentStep >= 1,
-            content: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Blood Group',
-                  style: TextStyle(color: Colors.white70),
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _bloodGroups.map((bg) {
-                    final isSelected = _bloodGroup == bg;
-                    return GestureDetector(
-                      onTap: () => setState(() => _bloodGroup = bg),
+  InputDecoration _inputDec(String hint, IconData icon) => InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.white38),
+        prefixIcon: Icon(icon, color: Colors.white38),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.05),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: AppTheme.primaryRed),
+        ),
+      );
+}
+
+// ── Top progress bar ──────────────────────────────────────────────
+class _TopBar extends StatelessWidget {
+  final int page;
+  const _TopBar({required this.page});
+
+  @override
+  Widget build(BuildContext context) {
+    final titles = ['Personal Info', 'Medical Info', 'Emergency Contacts'];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: List.generate(
+                3,
+                (i) => Expanded(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
-                        ),
+                        margin: const EdgeInsets.only(right: 6),
+                        height: 4,
                         decoration: BoxDecoration(
-                          color: isSelected
-                              ? AppTheme.primaryRed
-                              : AppTheme.cardDark,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: isSelected
-                                ? AppTheme.primaryRed
-                                : Colors.white24,
-                          ),
+                          color:
+                              i <= page ? AppTheme.primaryRed : Colors.white12,
+                          borderRadius: BorderRadius.circular(2),
                         ),
-                        child: Text(
-                          bg,
-                          style: TextStyle(
-                            color: isSelected ? Colors.white : Colors.white70,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ),
-
-          // Step 3 - Emergency Contacts
-          Step(
-            title: const Text(
-              'Emergency Contacts',
-              style: TextStyle(color: Colors.white),
-            ),
-            isActive: _currentStep >= 2,
-            content: Column(
-              children: [
-                ..._contacts.map((c) => ListTile(
-                      title: Text(
-                        c['name']!,
-                        style: const TextStyle(color: Colors.white),
-                      ),
-                      subtitle: Text(
-                        '${c['phone']} • ${c['relation']}',
-                        style: const TextStyle(color: Colors.white54),
-                      ),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete, color: Colors.red),
-                        onPressed: () =>
-                            setState(() => _contacts.remove(c)),
                       ),
                     )),
-                const SizedBox(height: 8),
-                OutlinedButton.icon(
-                  style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: AppTheme.primaryRed),
-                  ),
-                  icon: const Icon(Icons.add, color: AppTheme.primaryRed),
-                  label: const Text(
-                    'Add Contact',
-                    style: TextStyle(color: AppTheme.primaryRed),
-                  ),
-                  onPressed: _showAddContactDialog,
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'Step ${page + 1} of 3',
+            style: const TextStyle(color: Colors.white38, fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            titles[page],
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            _subtitle(page),
+            style: const TextStyle(color: Colors.white54, fontSize: 14),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _subtitle(int p) => [
+        'Tell us a bit about yourself',
+        'This helps rescuers assist you better',
+        'They will be alerted in an emergency',
+      ][p];
+}
+
+// ── Bottom bar ────────────────────────────────────────────────────
+class _BottomBar extends StatelessWidget {
+  final int page;
+  final bool isLoading;
+  final VoidCallback? onBack;
+  final VoidCallback onNext;
+  const _BottomBar(
+      {required this.page,
+      required this.isLoading,
+      required this.onBack,
+      required this.onNext});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Row(
+        children: [
+          if (onBack != null) ...[
+            Expanded(
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Colors.white24),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
                 ),
-                if (_isLoading) ...[
-                  const SizedBox(height: 16),
-                  const CircularProgressIndicator(color: AppTheme.primaryRed),
+                onPressed: onBack,
+                child:
+                    const Text('Back', style: TextStyle(color: Colors.white54)),
+              ),
+            ),
+            const SizedBox(width: 12),
+          ],
+          Expanded(
+            flex: 2,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppTheme.primaryRed,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: isLoading ? null : onNext,
+              child: isLoading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                  : Text(
+                      page < 2 ? 'Continue →' : 'Get Started',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Page 1: Personal Info ─────────────────────────────────────────
+class _Page1 extends StatelessWidget {
+  final TextEditingController nameC, phoneC;
+  const _Page1({required this.nameC, required this.phoneC});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const SizedBox(height: 32),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primaryRed.withOpacity(0.1),
+            ),
+            child:
+                const Icon(Icons.person, color: AppTheme.primaryRed, size: 48),
+          ),
+          const SizedBox(height: 40),
+          TextField(
+            controller: nameC,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Full Name',
+              hintStyle: const TextStyle(color: Colors.white38),
+              prefixIcon:
+                  const Icon(Icons.person_outline, color: Colors.white38),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.05),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppTheme.primaryRed)),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: phoneC,
+            style: const TextStyle(color: Colors.white),
+            keyboardType: TextInputType.phone,
+            decoration: InputDecoration(
+              hintText: 'Phone Number',
+              hintStyle: const TextStyle(color: Colors.white38),
+              prefixIcon:
+                  const Icon(Icons.phone_outlined, color: Colors.white38),
+              prefixText: '+91  ',
+              prefixStyle: const TextStyle(color: Colors.white54),
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.05),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: AppTheme.primaryRed)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Page 2: Blood Group ───────────────────────────────────────────
+class _Page2 extends StatelessWidget {
+  final String bloodGroup;
+  final List<String> bloodGroups;
+  final ValueChanged<String> onSelect;
+  const _Page2(
+      {required this.bloodGroup,
+      required this.bloodGroups,
+      required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const SizedBox(height: 32),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primaryRed.withOpacity(0.1),
+            ),
+            child: const Icon(Icons.bloodtype,
+                color: AppTheme.primaryRed, size: 48),
+          ),
+          const SizedBox(height: 40),
+          GridView.count(
+            shrinkWrap: true,
+            crossAxisCount: 4,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.3,
+            children: bloodGroups.map((bg) {
+              final selected = bloodGroup == bg;
+              return GestureDetector(
+                onTap: () => onSelect(bg),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppTheme.primaryRed
+                        : Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: selected ? AppTheme.primaryRed : Colors.white12),
+                  ),
+                  child: Center(
+                    child: Text(
+                      bg,
+                      style: TextStyle(
+                        color: selected ? Colors.white : Colors.white60,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Page 3: Emergency Contacts ────────────────────────────────────
+class _Page3 extends StatelessWidget {
+  final List<Map<String, String>> contacts;
+  final ValueChanged<Map<String, String>> onAdd;
+  final ValueChanged<Map<String, String>> onRemove;
+  final InputDecoration Function(String, IconData) inputDecoration;
+  const _Page3(
+      {required this.contacts,
+      required this.onAdd,
+      required this.onRemove,
+      required this.inputDecoration});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        children: [
+          const SizedBox(height: 16),
+          ...contacts.map((c) => Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.primaryRed.withOpacity(0.1),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.person,
+                          color: AppTheme.primaryRed, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(c['name']!,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600)),
+                          Text('${c['phone']} • ${c['relation']}',
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close,
+                          color: Colors.white38, size: 20),
+                      onPressed: () => onRemove(c),
+                    ),
+                  ],
+                ),
+              )),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () => _showAddDialog(context),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(
+                    color: AppTheme.primaryRed.withOpacity(0.5),
+                    style: BorderStyle.solid),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.add, color: AppTheme.primaryRed),
+                  SizedBox(width: 8),
+                  Text('Add Emergency Contact',
+                      style: TextStyle(
+                          color: AppTheme.primaryRed,
+                          fontWeight: FontWeight.w600)),
                 ],
-              ],
+              ),
             ),
           ),
         ],
@@ -211,81 +467,65 @@ Future<void> _saveUser() async {
     );
   }
 
-  InputDecoration _inputDecoration(String hint, IconData icon) {
-    return InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(color: Colors.white38),
-      prefixIcon: Icon(icon, color: Colors.white38),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.white24),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.white24),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppTheme.primaryRed),
-      ),
-    );
-  }
-
-  void _showAddContactDialog() {
+  void _showAddDialog(BuildContext context) {
     final nameC = TextEditingController();
     final phoneC = TextEditingController();
     final relationC = TextEditingController();
-
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: AppTheme.cardDark,
-        title: const Text(
-          'Add Emergency Contact',
-          style: TextStyle(color: Colors.white),
-        ),
+        backgroundColor: const Color(0xFF1E1E1E),
+        title: const Text('Add Contact', style: TextStyle(color: Colors.white)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: nameC,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration('Name', Icons.person),
-            ),
+            _field(nameC, 'Name', Icons.person_outline),
             const SizedBox(height: 12),
-            TextField(
-              controller: phoneC,
-              style: const TextStyle(color: Colors.white),
-              keyboardType: TextInputType.phone,
-              decoration: _inputDecoration('Phone', Icons.phone),
-            ),
+            _field(phoneC, 'Phone', Icons.phone_outlined, TextInputType.phone),
             const SizedBox(height: 12),
-            TextField(
-              controller: relationC,
-              style: const TextStyle(color: Colors.white),
-              decoration: _inputDecoration('Relation (e.g. Mom)', Icons.people),
-            ),
+            _field(relationC, 'Relation (e.g. Mom)', Icons.people_outline),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: Colors.white54)),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.white54))),
           ElevatedButton(
+            style:
+                ElevatedButton.styleFrom(backgroundColor: AppTheme.primaryRed),
             onPressed: () {
-              setState(() {
-                _contacts.add({
+              if (nameC.text.isNotEmpty && phoneC.text.isNotEmpty) {
+                onAdd({
                   'name': nameC.text.trim(),
                   'phone': phoneC.text.trim(),
-                  'relation': relationC.text.trim(),
+                  'relation': relationC.text.trim()
                 });
-              });
-              Navigator.pop(context);
+                Navigator.pop(context);
+              }
             },
             child: const Text('Add'),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _field(TextEditingController c, String hint, IconData icon,
+      [TextInputType? type]) {
+    return TextField(
+      controller: c,
+      style: const TextStyle(color: Colors.white),
+      keyboardType: type,
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.white38),
+        prefixIcon: Icon(icon, color: Colors.white38),
+        filled: true,
+        fillColor: Colors.white.withOpacity(0.05),
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none),
       ),
     );
   }

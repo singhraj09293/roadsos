@@ -1,94 +1,97 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:roadsos/core/services/accelerometer_service.dart';
+import 'package:roadsos/features/profile/screens/profile_screen.dart';
 import '../../detection/providers/detection_provider.dart';
 import '../../detection/screens/are_you_safe_dialog.dart';
 import '../../../core/theme/app_theme.dart';
-import '../../../core/services/accelerometer_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+// adjust import path
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final detectionState = ref.watch(detectionStateProvider);
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  int _selectedIndex = 0;
+
+  final _screens = const [
+    _HomeBody(),
+    _PlaceholderScreen('Map'),
+    _PlaceholderScreen('History'),
+    ProfileScreen(),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await Permission.location.request();
+      await Permission.sms.request();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen(detectionStateProvider, (previous, next) {
+      if (next == DetectionState.alerting) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const AreYouSafeDialog(),
+        );
+      }
+    });
+
     final isActive = ref.watch(isDetectionActiveProvider);
 
- ref.listen(detectionStateProvider, (previous, next) {
-  if (next == DetectionState.alerting) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const AreYouSafeDialog(),
-    );
-  }
-});
-WidgetsBinding.instance.addPostFrameCallback((_) async {
-  await Permission.location.request();
-  await Permission.sms.request();
-});
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: AppTheme.backgroundDark,
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryRed,
-                borderRadius: BorderRadius.circular(8),
+      backgroundColor: AppTheme.backgroundDark,
+      appBar: _selectedIndex == 0
+          ? AppBar(
+              backgroundColor: AppTheme.backgroundDark,
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryRed,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.emergency,
+                        color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'RoadSoS',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: Colors.white),
+                  ),
+                ],
               ),
-              child: const Icon(Icons.emergency, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 8),
-            const Text(
-              'RoadSoS',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          // Detection toggle
-          Switch(
-            value: isActive,
-            activeColor: AppTheme.safeGreen,
-            onChanged: (val) {
-              ref.read(detectionStateProvider.notifier).toggleDetection(val);
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            // Status card
-            _StatusCard(isActive: isActive),
-            const SizedBox(height: 24),
-
-            // Big SOS Button
-            _SosButton(
-              onPressed: () {
-                ref.read(detectionStateProvider.notifier).triggerManualSos();
-              },
-            ),
-            const SizedBox(height: 24),
-
-            // Quick dial buttons
-            const _QuickDial(),
-            const SizedBox(height: 24),
-
-            // Stats card
-            const _StatsCard(),
-          ],
-        ),
-      ),
+              actions: [
+                Switch(
+                  value: isActive,
+                  activeColor: AppTheme.safeGreen,
+                  onChanged: (val) => ref
+                      .read(detectionStateProvider.notifier)
+                      .toggleDetection(val),
+                ),
+                const SizedBox(width: 8),
+              ],
+            )
+          : null,
+      body: _screens[_selectedIndex],
       bottomNavigationBar: NavigationBar(
         backgroundColor: AppTheme.cardDark,
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.map), label: 'Map'),
@@ -96,6 +99,47 @@ WidgetsBinding.instance.addPostFrameCallback((_) async {
           NavigationDestination(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
+    );
+  }
+}
+
+class _HomeBody extends ConsumerWidget {
+  const _HomeBody();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isActive = ref.watch(isDetectionActiveProvider);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          _StatusCard(isActive: isActive),
+          const SizedBox(height: 24),
+          _SosButton(
+            onPressed: () =>
+                ref.read(detectionStateProvider.notifier).triggerManualSos(),
+          ),
+          const SizedBox(height: 24),
+          const _QuickDial(),
+          const SizedBox(height: 24),
+          const _StatsCard(),
+        ],
+      ),
+    );
+  }
+}
+
+// Temporary placeholder for unbuilt screens
+class _PlaceholderScreen extends StatelessWidget {
+  final String name;
+  const _PlaceholderScreen(this.name);
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(name,
+          style: const TextStyle(color: Colors.white54, fontSize: 20)),
     );
   }
 }
@@ -113,9 +157,8 @@ class _StatusCard extends StatelessWidget {
             ? AppTheme.safeGreen.withOpacity(0.1)
             : Colors.white.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isActive ? AppTheme.safeGreen : Colors.white24,
-        ),
+        border:
+            Border.all(color: isActive ? AppTheme.safeGreen : Colors.white24),
       ),
       child: Row(
         children: [
@@ -139,36 +182,70 @@ class _StatusCard extends StatelessWidget {
   }
 }
 
-class _SosButton extends StatelessWidget {
+class _SosButton extends StatefulWidget {
   final VoidCallback onPressed;
   const _SosButton({required this.onPressed});
 
   @override
+  State<_SosButton> createState() => _SosButtonState();
+}
+class _SosButtonState extends State<_SosButton> {
+  bool _holding = false;
+  int _countdown = 3;
+  Timer? _timer;
+
+  void _startHold() {
+    setState(() { _holding = true; _countdown = 3; });
+    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (_countdown == 1) {
+        t.cancel();
+        setState(() => _holding = false);
+        widget.onPressed();
+      } else {
+        setState(() => _countdown--);
+      }
+    });
+  }
+void _cancelHold() {
+  if (!_holding) return; // ← guard: ignore if already triggered
+  _timer?.cancel();
+  setState(() { _holding = false; _countdown = 3; });
+}
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onPressed,
-      child: Container(
-        width: 200,
-        height: 200,
+      onLongPressStart: (_) => _startHold(),
+      onLongPressEnd: (_) => _holding ? _cancelHold() : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: _holding ? 220 : 200,
+        height: _holding ? 220 : 200,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: AppTheme.primaryRed,
           boxShadow: [
             BoxShadow(
-              color: AppTheme.primaryRed.withOpacity(0.4),
-              blurRadius: 30,
-              spreadRadius: 10,
+              color: AppTheme.primaryRed.withOpacity(_holding ? 0.7 : 0.4),
+              blurRadius: _holding ? 50 : 30,
+              spreadRadius: _holding ? 20 : 10,
             ),
           ],
         ),
-        child: const Column(
+        child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.emergency, color: Colors.white, size: 60),
-            SizedBox(height: 8),
+            const Icon(Icons.emergency, color: Colors.white, size: 60),
+            const SizedBox(height: 8),
             Text(
-              'SOS',
-              style: TextStyle(
+              _holding ? '$_countdown' : 'SOS',
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 32,
                 fontWeight: FontWeight.bold,
@@ -176,8 +253,8 @@ class _SosButton extends StatelessWidget {
               ),
             ),
             Text(
-              'Press & Hold',
-              style: TextStyle(color: Colors.white70, fontSize: 12),
+              _holding ? 'Release to cancel' : 'Press & Hold',
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ],
         ),
@@ -191,12 +268,12 @@ class _QuickDial extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return const Row(
       children: [
         _DialButton(number: '108', label: 'Ambulance', icon: '🚑'),
-        const SizedBox(width: 12),
+        SizedBox(width: 12),
         _DialButton(number: '100', label: 'Police', icon: '🚓'),
-        const SizedBox(width: 12),
+        SizedBox(width: 12),
         _DialButton(number: '1033', label: 'Highway', icon: '🛣️'),
       ],
     );
@@ -207,40 +284,39 @@ class _DialButton extends StatelessWidget {
   final String number;
   final String label;
   final String icon;
+  const _DialButton(
+      {required this.number, required this.label, required this.icon});
 
-  const _DialButton({
-    required this.number,
-    required this.label,
-    required this.icon,
-  });
+  Future<void> _call() async {
+    final uri = Uri(scheme: 'tel', path: number);
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: AppTheme.cardDark,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white12),
-        ),
-        child: Column(
-          children: [
-            Text(icon, style: const TextStyle(fontSize: 24)),
-            const SizedBox(height: 4),
-            Text(
-              number,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(color: Colors.white54, fontSize: 11),
-            ),
-          ],
+      child: GestureDetector(
+        onTap: _call,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          decoration: BoxDecoration(
+            color: AppTheme.cardDark,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white12),
+          ),
+          child: Column(
+            children: [
+              Text(icon, style: const TextStyle(fontSize: 24)),
+              const SizedBox(height: 4),
+              Text(number,
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16)),
+              Text(label,
+                  style: const TextStyle(color: Colors.white54, fontSize: 11)),
+            ],
+          ),
         ),
       ),
     );
@@ -258,24 +334,21 @@ class _StatsCard extends StatelessWidget {
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.people, color: AppTheme.primaryRed),
-          SizedBox(width: 8),
-          Text(
-            'RoadSoS has helped ',
-            style: TextStyle(color: Colors.white70),
-          ),
-          Text(
-            '0 people',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          Text(' across India 🇮🇳', style: TextStyle(color: Colors.white70)),
-        ],
+      child: const FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.people, color: AppTheme.primaryRed),
+            SizedBox(width: 8),
+            Text('RoadSoS has helped ',
+                style: TextStyle(color: Colors.white70)),
+            Text('0 people',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold)),
+            Text(' across India 🇮🇳', style: TextStyle(color: Colors.white70)),
+          ],
+        ),
       ),
     );
   }
