@@ -25,6 +25,8 @@ dependencies:
   geolocator: ^12.0.0
   geocoding: ^3.0.0
   google_maps_flutter: ^2.7.0
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.0
 
   # Sensors (Crash Detection)
   sensors_plus: ^5.0.1
@@ -34,6 +36,7 @@ dependencies:
 
   # Communication
   url_launcher: ^6.3.0
+
   # flutter_sms:  ^2.3.3
   # send_sms: ^1.0.0
   permission_handler: ^11.3.1

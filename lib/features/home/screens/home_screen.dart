@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:roadsos/core/services/accelerometer_service.dart';
+import 'package:roadsos/features/map/screen/map_screen.dart';
 import 'package:roadsos/features/profile/screens/profile_screen.dart';
 import '../../detection/providers/detection_provider.dart';
 import '../../detection/screens/are_you_safe_dialog.dart';
@@ -23,7 +24,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   final _screens = const [
     _HomeBody(),
-    _PlaceholderScreen('Map'),
+    MapScreen(),
     _PlaceholderScreen('History'),
     ProfileScreen(),
   ];
