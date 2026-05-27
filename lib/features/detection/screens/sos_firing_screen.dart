@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
 import '../providers/detection_provider.dart';
 import '../../home/screens/home_screen.dart';
@@ -124,6 +125,11 @@ class _CallButton extends StatelessWidget {
   final String label;
   const _CallButton({required this.number, required this.label});
 
+  Future<void> _call() async {
+    final uri = Uri(scheme: 'tel', path: number);
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Expanded(
@@ -132,23 +138,14 @@ class _CallButton extends StatelessWidget {
           backgroundColor: AppTheme.primaryRed,
           padding: const EdgeInsets.symmetric(vertical: 12),
         ),
-        onPressed: () async {
-          final uri = Uri(scheme: 'tel', path: number);
-          // url_launcher call
-        },
+        onPressed: _call,
         child: Column(
           children: [
             Text(
               number,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-              ),
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 10),
-            ),
+            Text(label, style: const TextStyle(fontSize: 10)),
           ],
         ),
       ),

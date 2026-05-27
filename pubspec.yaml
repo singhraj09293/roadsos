@@ -47,6 +47,10 @@ dependencies:
   google_fonts: ^6.2.1
   gap: ^3.0.1
   shared_preferences: ^2.2.2
+  connectivity_plus: ^6.0.3
+
+  #icon
+  flutter_launcher_icons: ^0.14.4
 
 dev_dependencies:
   flutter_test:
@@ -54,9 +58,14 @@ dev_dependencies:
   flutter_lints: ^4.0.0
   build_runner: ^2.4.11
   riverpod_generator: ^2.4.0
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/
     - assets/icons/
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icons/sos.jpeg"

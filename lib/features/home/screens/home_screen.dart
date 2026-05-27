@@ -1,11 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:roadsos/core/services/accelerometer_service.dart';
+import 'package:roadsos/features/history/screen/histroy_screen.dart';
+import 'package:roadsos/features/home/widget/danger_alerts_widget.dart';
 import 'package:roadsos/features/map/screen/map_screen.dart';
 import 'package:roadsos/features/profile/screens/profile_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../detection/providers/detection_provider.dart';
 import '../../detection/screens/are_you_safe_dialog.dart';
 import '../../../core/theme/app_theme.dart';
@@ -25,7 +30,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _screens = const [
     _HomeBody(),
     MapScreen(),
-    _PlaceholderScreen('History'),
+    HistoryScreen(),
     ProfileScreen(),
   ];
 
@@ -115,7 +120,9 @@ class _HomeBody extends ConsumerWidget {
       padding: const EdgeInsets.all(20),
       child: Column(
         children: [
-          _StatusCard(isActive: isActive),
+          _StatusCard(isActive: isActive), // ← 1st
+          const SizedBox(height: 12),
+          const _ConnectivityCard(), // ← 2nd
           const SizedBox(height: 24),
           _SosButton(
             onPressed: () =>
@@ -125,6 +132,8 @@ class _HomeBody extends ConsumerWidget {
           const _QuickDial(),
           const SizedBox(height: 24),
           const _StatsCard(),
+          const SizedBox(height: 24),
+          const DangerAlertsWidget(), // ← last
         ],
       ),
     );
@@ -169,9 +178,7 @@ class _StatusCard extends StatelessWidget {
           ),
           const SizedBox(width: 12),
           Text(
-            isActive
-                ? '🛡️ Crash detection is ON'
-                : '⚠️ Crash detection is OFF',
+            isActive ? 'Crash detection is ON' : 'Crash detection is OFF',
             style: TextStyle(
               color: isActive ? AppTheme.safeGreen : Colors.white38,
               fontWeight: FontWeight.w600,
@@ -190,13 +197,17 @@ class _SosButton extends StatefulWidget {
   @override
   State<_SosButton> createState() => _SosButtonState();
 }
+
 class _SosButtonState extends State<_SosButton> {
   bool _holding = false;
   int _countdown = 3;
   Timer? _timer;
 
   void _startHold() {
-    setState(() { _holding = true; _countdown = 3; });
+    setState(() {
+      _holding = true;
+      _countdown = 3;
+    });
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (_countdown == 1) {
         t.cancel();
@@ -207,11 +218,15 @@ class _SosButtonState extends State<_SosButton> {
       }
     });
   }
-void _cancelHold() {
-  if (!_holding) return; // ← guard: ignore if already triggered
-  _timer?.cancel();
-  setState(() { _holding = false; _countdown = 3; });
-}
+
+  void _cancelHold() {
+    if (!_holding) return; // ← guard: ignore if already triggered
+    _timer?.cancel();
+    setState(() {
+      _holding = false;
+      _countdown = 3;
+    });
+  }
 
   @override
   void dispose() {
@@ -324,8 +339,32 @@ class _DialButton extends StatelessWidget {
   }
 }
 
-class _StatsCard extends StatelessWidget {
-  const _StatsCard();
+class _StatsCard extends StatefulWidget {
+  const _StatsCard({super.key});
+
+  @override
+  State<_StatsCard> createState() => _StatsCardState();
+}
+
+class _StatsCardState extends State<_StatsCard> {
+  int _helpedCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCount();
+  }
+
+  Future<void> _loadCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    final history = prefs.getStringList('sos_history') ?? [];
+    // Count only real SOS events (not false alarms)
+    final count = history.where((e) {
+      final map = json.decode(e);
+      return map['falseAlarm'] != true;
+    }).length;
+    if (mounted) setState(() => _helpedCount = count);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -335,22 +374,103 @@ class _StatsCard extends StatelessWidget {
         color: AppTheme.cardDark,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const FittedBox(
+      child: FittedBox(
         fit: BoxFit.scaleDown,
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.people, color: AppTheme.primaryRed),
-            SizedBox(width: 8),
-            Text('RoadSoS has helped ',
+            const Icon(Icons.people, color: AppTheme.primaryRed),
+            const SizedBox(width: 8),
+            const Text('RoadSoS has helped ',
                 style: TextStyle(color: Colors.white70)),
-            Text('0 people',
-                style: TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.bold)),
-            Text(' across India 🇮🇳', style: TextStyle(color: Colors.white70)),
+            Text(
+              '$_helpedCount ${_helpedCount == 1 ? 'person' : 'people'}',
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            const Text(' across India 🇮🇳',
+                style: TextStyle(color: Colors.white70)),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ConnectivityCard extends StatefulWidget {
+  const _ConnectivityCard();
+
+  @override
+  State<_ConnectivityCard> createState() => _ConnectivityCardState();
+}
+
+class _ConnectivityCardState extends State<_ConnectivityCard> {
+  bool _isOnline = true;
+  late StreamSubscription _subscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkConnectivity();
+    _subscription = Connectivity().onConnectivityChanged.listen((results) {
+      setState(() => _isOnline = !results.contains(ConnectivityResult.none));
+    });
+  }
+
+  Future<void> _checkConnectivity() async {
+    final results = await Connectivity().checkConnectivity();
+    if (mounted)
+      setState(() => _isOnline = !results.contains(ConnectivityResult.none));
+  }
+
+  @override
+  void dispose() {
+    _subscription.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: _isOnline
+                ? Colors.green.withOpacity(0.1)
+                : Colors.orange.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: _isOnline
+                  ? Colors.green.withOpacity(0.3)
+                  : Colors.orange.withOpacity(0.3),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _isOnline ? Colors.green : Colors.orange,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                _isOnline ? 'Online' : 'Offline — SOS active',
+                style: TextStyle(
+                  color: _isOnline ? Colors.green : Colors.orange,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
