@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme/app_theme.dart';
 
 class MapScreen extends StatefulWidget {
@@ -45,17 +46,11 @@ class _MapScreenState extends State<MapScreen> {
 
       setState(() => _statusText = 'Getting location...');
       final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      debugPrint(
-          '📍 Got position: ${position.latitude}, ${position.longitude}');
+          desiredAccuracy: LocationAccuracy.high);
       setState(() =>
           _currentLocation = LatLng(position.latitude, position.longitude));
 
       setState(() => _statusText = 'Finding nearby help...');
-
-      // Sequential instead of parallel
       await _fetchPlaces(position.latitude, position.longitude, 'hospital');
       await _fetchPlaces(position.latitude, position.longitude, 'clinic');
       await _fetchPlaces(position.latitude, position.longitude, 'police');
@@ -64,7 +59,6 @@ class _MapScreenState extends State<MapScreen> {
       await Future.delayed(const Duration(milliseconds: 300));
       if (mounted) _mapController.move(_currentLocation!, 14);
     } catch (e) {
-      debugPrint('❌ Error: $e');
       setState(() {
         _isLoading = false;
         _statusText = 'Error: $e';
@@ -73,31 +67,15 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _fetchPlaces(double lat, double lng, String type) async {
-    debugPrint('🔍 Fetching $type at $lat, $lng');
-    final amenity = type;
     final uri = Uri.parse('https://nominatim.openstreetmap.org/search?'
-        'amenity=$amenity&'
-        'format=json&'
-        'limit=15&'
-        'countrycodes=in&'
-        'viewbox=${lng - 0.05},${lat + 0.05},${lng + 0.05},${lat - 0.05}&'
-        'bounded=1');
+        'amenity=$type&format=json&limit=15&countrycodes=in&'
+        'viewbox=${lng - 0.05},${lat + 0.05},${lng + 0.05},${lat - 0.05}&bounded=1');
     try {
-      final response = await http.get(
-        uri,
-        headers: {'User-Agent': 'RoadSoS/1.0 (com.example.roadsos)'},
-      ).timeout(const Duration(seconds: 15));
-
-      debugPrint('✅ $type status: ${response.statusCode}');
-
+      final response = await http.get(uri, headers: {
+        'User-Agent': 'RoadSoS/1.0 (com.example.roadsos)'
+      }).timeout(const Duration(seconds: 15));
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        debugPrint('📊 $type count: ${data.length}');
-        if (_hospitals.isNotEmpty) {
-          debugPrint(
-              '🏥 First hospital: ${_hospitals[0].lat}, ${_hospitals[0].lng}');
-        }
-
         final places = data
             .map((e) => _Place(
                   name: e['display_name'].toString().split(',')[0],
@@ -106,15 +84,12 @@ class _MapScreenState extends State<MapScreen> {
                   type: type,
                 ))
             .toList();
-
         if (mounted) {
           setState(() {
-            setState(() {
-              if (type == 'hospital' || type == 'clinic')
-                _hospitals = [..._hospitals, ...places];
-              else
-                _policeStations = places;
-            });
+            if (type == 'hospital' || type == 'clinic')
+              _hospitals = [..._hospitals, ...places];
+            else
+              _policeStations = places;
           });
         }
       }
@@ -125,16 +100,106 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  double _distanceKm(_Place place) {
+    if (_currentLocation == null) return 0;
+    final d = const Distance();
+    return d.as(
+        LengthUnit.Kilometer, _currentLocation!, LatLng(place.lat, place.lng));
+  }
+
+  Future<void> _openGoogleMaps(_Place place) async {
+    final uri = Uri.parse('https://www.google.com/maps/dir/?api=1'
+        '&destination=${place.lat},${place.lng}'
+        '&travelmode=driving');
+    if (await canLaunchUrl(uri))
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  void _showPlaceInfo(_Place place) {
+    final dist = _distanceKm(place);
+    final isHospital = place.type == 'hospital' || place.type == 'clinic';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1E1E1E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: (isHospital ? Colors.blue : Colors.orange)
+                        .withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isHospital ? Icons.local_hospital : Icons.local_police,
+                    color: isHospital ? Colors.blue : Colors.orange,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(place.name,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold)),
+                      Text(isHospital ? 'Hospital / Clinic' : 'Police Station',
+                          style: const TextStyle(
+                              color: Colors.white54, fontSize: 13)),
+                      Text('${dist.toStringAsFixed(1)} km away',
+                          style: TextStyle(
+                              color: isHospital ? Colors.blue : Colors.orange,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isHospital ? Colors.blue : Colors.orange,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                icon: const Icon(Icons.directions, color: Colors.white),
+                label: const Text('Get Directions',
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
+                onPressed: () {
+                  Navigator.pop(context);
+                  _openGoogleMaps(place);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Marker> _buildMarkers() {
-    debugPrint(
-        '🗺️ Building markers: ${_hospitals.length} hospitals, ${_policeStations.length} police');
     final markers = <Marker>[];
 
     if (_currentLocation != null) {
       markers.add(Marker(
         point: _currentLocation!,
-        width: 50,
-        height: 50,
+        width: 54,
+        height: 54,
         child: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
@@ -147,7 +212,7 @@ class _MapScreenState extends State<MapScreen> {
                   spreadRadius: 4)
             ],
           ),
-          child: const Icon(Icons.person_pin, color: Colors.white, size: 20),
+          child: const Text('🧍', style: TextStyle(fontSize: 30)),
         ),
       ));
     }
@@ -155,8 +220,8 @@ class _MapScreenState extends State<MapScreen> {
     for (final h in _hospitals) {
       markers.add(Marker(
         point: LatLng(h.lat, h.lng),
-        width: 44,
-        height: 44,
+        width: 48,
+        height: 48,
         child: GestureDetector(
           onTap: () => _showPlaceInfo(h),
           child: Container(
@@ -171,8 +236,7 @@ class _MapScreenState extends State<MapScreen> {
                     spreadRadius: 2)
               ],
             ),
-            child:
-                const Icon(Icons.local_hospital, color: Colors.white, size: 20),
+            child: const Text('🏥', style: TextStyle(fontSize: 28)),
           ),
         ),
       ));
@@ -180,81 +244,38 @@ class _MapScreenState extends State<MapScreen> {
 
     for (final p in _policeStations) {
       markers.add(Marker(
-        point: LatLng(p.lat, p.lng),
-        width: 44,
-        height: 44,
-        child: GestureDetector(
-          onTap: () => _showPlaceInfo(p),
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.orange,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.orange.withOpacity(0.4),
-                    blurRadius: 6,
-                    spreadRadius: 2)
-              ],
+          point: LatLng(p.lat, p.lng),
+          width: 48,
+          height: 48,
+          child: GestureDetector(
+            onTap: () => _showPlaceInfo(p),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.orange,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.orange.withOpacity(0.4),
+                      blurRadius: 6,
+                      spreadRadius: 2)
+                ],
+              ),
+              child: const Text('🚓', style: TextStyle(fontSize: 28)),
             ),
-            child:
-                const Icon(Icons.local_police, color: Colors.white, size: 20),
-          ),
-        ),
-      ));
+          )));
     }
 
     return markers;
   }
 
-  void _showPlaceInfo(_Place place) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: (place.type == 'hospital' ? Colors.blue : Colors.orange)
-                    .withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                place.type == 'hospital'
-                    ? Icons.local_hospital
-                    : Icons.local_police,
-                color: place.type == 'hospital' ? Colors.blue : Colors.orange,
-              ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(place.name,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold)),
-                  Text(place.type == 'hospital' ? 'Hospital' : 'Police Station',
-                      style: const TextStyle(color: Colors.white54)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final sortedHospitals = [..._hospitals]
+      ..sort((a, b) => _distanceKm(a).compareTo(_distanceKm(b)));
+    final sortedPolice = [..._policeStations]
+      ..sort((a, b) => _distanceKm(a).compareTo(_distanceKm(b)));
+
     return Scaffold(
       backgroundColor: AppTheme.backgroundDark,
       appBar: AppBar(
@@ -266,49 +287,45 @@ class _MapScreenState extends State<MapScreen> {
             Text(
               _isLoading
                   ? _statusText
-                  : '${_hospitals.length} hospitals • ${_policeStations.length} police stations',
+                  : '${_hospitals.length} hospitals • ${_policeStations.length} police',
               style: const TextStyle(color: Colors.white54, fontSize: 12),
             ),
           ],
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            onPressed: () {
-              setState(() {
-                _isLoading = true;
-                _hospitals = [];
-                _policeStations = [];
-              });
-              _init();
-            },
-          ),
+              icon: const Icon(Icons.refresh, color: Colors.white),
+              onPressed: () {
+                setState(() {
+                  _isLoading = true;
+                  _hospitals = [];
+                  _policeStations = [];
+                });
+                _init();
+              }),
           IconButton(
-            icon: const Icon(Icons.my_location, color: Colors.white),
-            onPressed: () {
-              if (_currentLocation != null)
-                _mapController.move(_currentLocation!, 14);
-            },
-          ),
+              icon: const Icon(Icons.my_location, color: Colors.white),
+              onPressed: () {
+                if (_currentLocation != null)
+                  _mapController.move(_currentLocation!, 14);
+              }),
         ],
       ),
       body: _isLoading
           ? Center(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                   const CircularProgressIndicator(color: AppTheme.primaryRed),
                   const SizedBox(height: 16),
                   Text(_statusText,
                       style: const TextStyle(color: Colors.white54)),
-                ],
-              ),
-            )
+                ]))
           : _currentLocation == null
               ? Center(
                   child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
                       const Icon(Icons.location_off,
                           color: Colors.white38, size: 48),
                       const SizedBox(height: 16),
@@ -324,56 +341,105 @@ class _MapScreenState extends State<MapScreen> {
                         },
                         child: const Text('Retry'),
                       ),
-                    ],
-                  ),
-                )
-              : Stack(
-                  children: [
-                    FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(
-                          initialCenter: _currentLocation!, initialZoom: 14),
-                      children: [
-                        TileLayer(
+                    ]))
+              : Stack(children: [
+                  FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                        initialCenter: _currentLocation!, initialZoom: 14),
+                    children: [
+                      TileLayer(
                           urlTemplate:
                               'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'com.example.roadsos',
-                        ),
-                        MarkerLayer(markers: _buildMarkers()),
-                      ],
-                    ),
-                    Positioned(
-                      bottom: 20,
-                      left: 20,
-                      right: 20,
-                      child: Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppTheme.cardDark.withOpacity(0.95),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white12),
-                        ),
-                        child: const Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _LegendItem(
-                                icon: Icons.person_pin,
-                                color: AppTheme.primaryRed,
-                                label: 'You'),
-                            _LegendItem(
-                                icon: Icons.local_hospital,
-                                color: Colors.blue,
-                                label: 'Hospital'),
-                            _LegendItem(
-                                icon: Icons.local_police,
-                                color: Colors.orange,
-                                label: 'Police'),
+                          userAgentPackageName: 'com.example.roadsos'),
+                      MarkerLayer(markers: _buildMarkers()),
+                    ],
+                  ),
+                  Positioned(
+                    bottom: 20,
+                    left: 20,
+                    right: 20,
+                    child: Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardDark.withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white12),
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _LegendItem(emoji: '🧍', label: 'You'),
+                              _LegendItem(emoji: '🏥', label: 'Hospital'),
+                              _LegendItem(emoji: '🚓', label: 'Police'),
+                            ],
+                          ),
+                          if (sortedHospitals.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            const Divider(color: Colors.white12),
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                const Text('🏥',
+                                    style: TextStyle(fontSize: 16)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                    child: Text(sortedHospitals.first.name,
+                                        style: const TextStyle(
+                                            color: Colors.white, fontSize: 12),
+                                        overflow: TextOverflow.ellipsis)),
+                                Text(
+                                    '${_distanceKm(sortedHospitals.first).toStringAsFixed(1)} km',
+                                    style: const TextStyle(
+                                        color: Colors.blue,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold)),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () =>
+                                      _openGoogleMaps(sortedHospitals.first),
+                                  child: const Icon(Icons.directions,
+                                      color: Colors.blue, size: 18),
+                                ),
+                              ],
+                            ),
                           ],
-                        ),
+                          if (sortedPolice.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                const Text('🚓',
+                                    style: TextStyle(fontSize: 16)),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                    child: Text(sortedPolice.first.name,
+                                        style: const TextStyle(
+                                            color: Colors.white, fontSize: 12),
+                                        overflow: TextOverflow.ellipsis)),
+                                Text(
+                                    '${_distanceKm(sortedPolice.first).toStringAsFixed(1)} km',
+                                    style: const TextStyle(
+                                        color: Colors.orange,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold)),
+                                const SizedBox(width: 8),
+                                GestureDetector(
+                                  onTap: () =>
+                                      _openGoogleMaps(sortedPolice.first),
+                                  child: const Icon(Icons.directions,
+                                      color: Colors.orange, size: 18),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ]),
     );
   }
 }
@@ -391,18 +457,16 @@ class _Place {
 }
 
 class _LegendItem extends StatelessWidget {
-  final IconData icon;
-  final Color color;
+  final String emoji;
   final String label;
-  const _LegendItem(
-      {required this.icon, required this.color, required this.label});
+  const _LegendItem({required this.emoji, required this.label});
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, color: color, size: 24),
+        Text(emoji, style: const TextStyle(fontSize: 24)),
         const SizedBox(height: 4),
         Text(label,
             style: const TextStyle(color: Colors.white54, fontSize: 12)),

@@ -52,6 +52,9 @@ dependencies:
   #icon
   flutter_launcher_icons: ^0.14.4
 
+  #map
+  flutter_map_marker_popup: ^5.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

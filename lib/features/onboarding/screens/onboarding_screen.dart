@@ -1,6 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:roadsos/features/auth/screen/login_screen.dart';
 import 'package:roadsos/features/onboarding/screens/user_setup_Screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/theme/app_theme.dart';
 import '../providers/onboarding_provider.dart';
 import '../../home/screens/home_screen.dart';
@@ -125,20 +128,23 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               child: SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (_currentPage < _pages.length - 1) {
                       _controller.nextPage(
                         duration: const Duration(milliseconds: 300),
                         curve: Curves.easeInOut,
                       );
                     } else {
-                      // Complete onboarding
-                      OnboardingNotifier.completeOnboarding();
-                      ref.read(isOnboardedProvider.notifier).state = true;
+                      // Mark onboarding as complete
+                      final prefs = await SharedPreferences.getInstance();
+                      await prefs.setBool('isOnboarded', true);
+
+                      if (!mounted) return;
                       Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(
-                            builder: (_) => const UserSetupScreen()),
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
                       );
+                      // No need to check currentUser here —
+                      // RoadSoSApp's StreamBuilder already redirects logged-in users to HomeScreen
                     }
                   },
                   child: Text(
